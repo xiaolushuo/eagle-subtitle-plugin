@@ -1,0 +1,92 @@
+Eagle 字幕插件 v1.0.0 - 安装说明
+=====================================
+
+🎬 Eagle 视频字幕插件 - 支持SRT、ASS、VTT格式
+
+📦 版本：v1.0.0
+📅 发布日期：2024年8月21日
+📄 许可证：MIT
+👤 作者：xiaolushuo
+
+🌟 功能特点：
+- 自动字幕加载
+- 支持SRT、ASS、SSA、VTT格式
+- 精确时间同步
+- 样式自定义
+- 快捷键支持
+- 响应式设计
+- 性能优化
+
+📋 安装步骤：
+
+1️⃣ 复制插件文件夹到Eagle插件目录：
+
+   Windows:
+   C:\Users\[用户名]\AppData\Roaming\Eagle\plugins\eagle-subtitle-plugin-v1.0.0-compiled
+
+   macOS:
+   ~/Library/Application Support/Eagle/plugins/eagle-subtitle-plugin-v1.0.0-compiled
+
+   Linux:
+   ~/.config/Eagle/plugins/eagle-subtitle-plugin-v1.0.0-compiled
+
+2️⃣ 重启Eagle应用程序
+
+3️⃣ 在Eagle中启用插件：
+   - 打开Eagle
+   - 进入设置/插件管理
+   - 找到"Eagle 视频字幕插件"
+   - 点击启用
+
+🎯 使用方法：
+
+1. 在Eagle中选择一个视频文件
+2. 确保视频文件同目录下有同名字幕文件
+   例如：movie.mp4 + movie.srt
+3. 播放视频，字幕会自动显示在视频上
+
+⌨️ 快捷键：
+- H键：显示/隐藏字幕
+- O键：调整时间偏移
+- S键：更改字幕样式
+- ESC键：隐藏控制面板
+
+🎨 控制面板：
+- 鼠标移动到屏幕顶部显示控制面板
+- 可以调整字幕大小、位置、时间偏移
+- 支持重新加载字幕文件
+
+🔧 故障排除：
+
+❌ 字幕不显示：
+- 确保字幕文件与视频文件同名
+- 检查字幕文件格式是否支持
+- 确认字幕文件编码为UTF-8
+- 检查Eagle播放器是否正在播放
+
+❌ 时间不同步：
+- 使用"调整偏移"功能
+- 输入正数延迟字幕，负数提前字幕
+- 例如：字幕快2秒，输入-2
+
+❌ 插件无法加载：
+- 确认插件文件放置在正确目录
+- 检查manifest.json格式是否正确
+- 查看Eagle控制台是否有错误信息
+
+📞 技术支持：
+- GitHub：https://github.com/xiaolushuo/eagle-subtitle-plugin
+- Issues：https://github.com/xiaolushuo/eagle-subtitle-plugin/issues
+
+📄 文件清单：
+- manifest.json - 插件配置文件
+- main.js - 主控制器
+- overlay.html - 字幕覆盖层
+- subtitle-parser.js - 字幕解析器
+- subtitle-sync.js - 字幕同步器
+- utils.js - 工具函数
+- styles.css - 样式文件
+- README.md - 使用说明
+- package-info.json - 包信息
+
+🎉 感谢使用Eagle字幕插件！
