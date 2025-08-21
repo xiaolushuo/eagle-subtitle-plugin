@@ -1,0 +1,36 @@
+Eagle 字幕插件安装说明
+==========================
+
+版本：v1.0.0
+构建时间：2025-08-21
+文件大小：61 KB
+
+安装步骤：
+1. 将整个文件夹复制到 Eagle 插件目录
+2. 重启 Eagle 应用
+3. 在 Eagle 中启用插件
+
+插件目录位置：
+- Windows: %APPDATA%\Eagle\plugins\
+- macOS: ~/Library/Application Support/Eagle/plugins/
+- Linux: ~/.config/Eagle/plugins/
+
+使用方法：
+1. 在 Eagle 中选择视频文件
+2. 确保视频文件同目录下有同名字幕文件（如：movie.mp4 + movie.srt）
+3. 播放视频，字幕会自动显示
+
+快捷键：
+- H: 显示/隐藏字幕
+- O: 调整时间偏移
+- S: 更改字幕样式
+- ESC: 隐藏控制面板
+
+支持的字幕格式：
+- SRT
+- ASS/SSA
+- VTT
+
+技术支持：
+GitHub: https://github.com/xiaolushuo/eagle-subtitle-plugin
+Issues: https://github.com/xiaolushuo/eagle-subtitle-plugin/issues
