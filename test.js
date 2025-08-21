@@ -91,14 +91,17 @@ class PluginTester {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
         
         // Required fields
-        const requiredFields = ['name', 'version', 'description', 'main'];
+        const requiredFields = ['name', 'version', 'description'];
         for (const field of requiredFields) {
             this.addTestResult(`Manifest has ${field}`, !!manifest[field]);
         }
         
-        // Check main file exists
-        const mainPath = path.join(this.pluginDir, manifest.main);
-        this.addTestResult(`Main file exists: ${manifest.main}`, fs.existsSync(mainPath));
+        // Check main files exist
+        const mainFiles = ['index.html', 'js/plugin.js'];
+        for (const file of mainFiles) {
+            const filePath = path.join(this.pluginDir, file);
+            this.addTestResult(`Required file exists: ${file}`, fs.existsSync(filePath));
+        }
         
         // Check permissions
         if (manifest.permissions) {
@@ -114,15 +117,15 @@ class PluginTester {
     }
 
     async testMainJs() {
-        console.log('🔧 Testing main.js...');
+        console.log('🔧 Testing js/plugin.js...');
         
-        const mainPath = path.join(this.pluginDir, 'main.js');
+        const mainPath = path.join(this.pluginDir, 'js/plugin.js');
         const content = fs.readFileSync(mainPath, 'utf8');
         
         // Check for required imports
-        this.addTestResult('Imports utils', content.includes("require('./utils.js')"));
-        this.addTestResult('Imports parser', content.includes("require('./subtitle-parser.js')"));
-        this.addTestResult('Imports sync', content.includes("require('./subtitle-sync.js')"));
+        this.addTestResult('Imports utils', content.includes("require('../utils.js')"));
+        this.addTestResult('Imports parser', content.includes("require('../subtitle-parser.js')"));
+        this.addTestResult('Imports sync', content.includes("require('../subtitle-sync.js')"));
         
         // Check for main functions
         const requiredFunctions = ['initialize', 'setupEventListeners', 'handleFileSelection', 'loadSubtitlesForVideo'];
@@ -134,7 +137,7 @@ class PluginTester {
         this.addTestResult('Uses eagle.onPluginCreate', content.includes('eagle.onPluginCreate'));
         this.addTestResult('Uses eagle.player', content.includes('eagle.player'));
         
-        console.log('✅ Main.js test completed\n');
+        console.log('✅ js/plugin.js test completed\n');
     }
 
     async testOverlayHtml() {

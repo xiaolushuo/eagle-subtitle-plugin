@@ -12,7 +12,8 @@ class PluginBuilder {
         this.distDir = path.join(__dirname, 'dist');
         this.requiredFiles = [
             'manifest.json',
-            'main.js',
+            'index.html',
+            'js/plugin.js',
             'overlay.html',
             'subtitle-parser.js',
             'subtitle-sync.js',
@@ -74,6 +75,12 @@ class PluginBuilder {
             const destPath = path.join(this.distDir, file);
             
             if (fs.existsSync(srcPath)) {
+                // Create directory if needed
+                const destDir = path.dirname(destPath);
+                if (!fs.existsSync(destDir)) {
+                    fs.mkdirSync(destDir, { recursive: true });
+                }
+                
                 fs.copyFileSync(srcPath, destPath);
                 console.log(`📄 Copied: ${file}`);
             } else {
@@ -101,17 +108,27 @@ class PluginBuilder {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
         
         // Validate manifest structure
-        const requiredFields = ['name', 'version', 'description', 'main'];
+        const requiredFields = ['name', 'version', 'description'];
         for (const field of requiredFields) {
             if (!manifest[field]) {
                 throw new Error(`Manifest missing required field: ${field}`);
             }
         }
         
-        // Validate main file exists
-        const mainPath = path.join(this.distDir, manifest.main);
-        if (!fs.existsSync(mainPath)) {
-            throw new Error(`Main file not found: ${manifest.main}`);
+        // Check for logo (optional but recommended)
+        if (manifest.logo) {
+            console.log('✅ Has logo');
+        } else {
+            console.log('⚠️ Missing logo (optional)');
+        }
+        
+        // Validate main files exist for Eagle plugin structure
+        const mainFiles = ['index.html', 'js/plugin.js'];
+        for (const file of mainFiles) {
+            const filePath = path.join(this.distDir, file);
+            if (!fs.existsSync(filePath)) {
+                throw new Error(`Required file not found: ${file}`);
+            }
         }
         
         console.log('✅ Plugin validation passed');
