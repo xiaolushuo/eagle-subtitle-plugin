@@ -1,0 +1,27 @@
+{
+  "name": "eagle-subtitle-plugin",
+  "version": "1.0.0",
+  "description": "为 Eagle 播放器提供字幕显示功能，支持 SRT、ASS、VTT 格式",
+  "main": "main.js",
+  "author": "xiaolushuo",
+  "license": "MIT",
+  "logo": "icon.png",
+  "features": ["window"],
+  "permissions": [
+    "fileSystem",
+    "item",
+    "player",
+    "window"
+  ],
+  "engines": {
+    "eagle": ">=3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xiaolushuo/eagle-subtitle-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xiaolushuo/eagle-subtitle-plugin/issues"
+  },
+  "homepage": "https://github.com/xiaolushuo/eagle-subtitle-plugin#readme"
+}

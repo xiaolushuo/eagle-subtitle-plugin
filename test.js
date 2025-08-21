@@ -124,13 +124,10 @@ class PluginTester {
         this.addTestResult('Imports parser', content.includes("require('./subtitle-parser.js')"));
         this.addTestResult('Imports sync', content.includes("require('./subtitle-sync.js')"));
         
-        // Check for main class
-        this.addTestResult('Has EagleSubtitlePlugin class', content.includes('class EagleSubtitlePlugin'));
-        
-        // Check for required methods
-        const requiredMethods = ['init', 'setupEventListeners', 'handleFileSelection', 'loadSubtitlesForVideo'];
-        for (const method of requiredMethods) {
-            this.addTestResult(`Has method: ${method}`, content.includes(method));
+        // Check for main functions
+        const requiredFunctions = ['initialize', 'setupEventListeners', 'handleFileSelection', 'loadSubtitlesForVideo'];
+        for (const func of requiredFunctions) {
+            this.addTestResult(`Has function: ${func}`, content.includes(func));
         }
         
         // Check for Eagle API usage

@@ -1,539 +1,567 @@
 /**
- * Eagle 视频字幕插件主控制器
- * 功能：检测视频播放、加载字幕、创建覆盖层、同步字幕显示
+ * Eagle Subtitle Plugin - Main Entry Point
+ * This is the main entry point for the Eagle subtitle plugin
  */
 
-// 导入依赖
+// Import required modules
 const SubtitleUtils = require('./utils.js');
 const SubtitleParser = require('./subtitle-parser.js');
 const SubtitleSync = require('./subtitle-sync.js');
 
-class EagleSubtitlePlugin {
-    constructor() {
-        this.utils = SubtitleUtils;
-        this.parser = new SubtitleParser();
-        this.sync = new SubtitleSync();
-        
-        this.currentVideo = null;
-        this.currentSubtitles = [];
-        this.isPlaying = false;
-        this.overlayWindow = null;
-        this.timeOffset = 0;
-        this.subtitlesVisible = true;
-        
-        this.init();
+// Plugin state
+let pluginState = {
+    initialized: false,
+    currentVideo: null,
+    currentSubtitles: [],
+    subtitleSync: null,
+    overlayWindow: null,
+    timeOffset: 0,
+    subtitlesVisible: true
+};
+
+/**
+ * Initialize the plugin
+ */
+async function initialize() {
+    if (pluginState.initialized) {
+        console.log('Plugin already initialized');
+        return;
     }
+
+    console.log('🎬 Initializing Eagle Subtitle Plugin...');
     
-    async init() {
-        console.log('🎬 Eagle 字幕插件启动中...');
+    try {
+        // Initialize subtitle sync
+        pluginState.subtitleSync = new SubtitleSync();
+        pluginState.subtitleSync.onSubtitleChange = displaySubtitle;
         
-        // Eagle 插件初始化
-        eagle.onPluginCreate(async (plugin) => {
-            console.log('✅ Eagle 字幕插件已初始化');
-            await this.setupEventListeners();
-            await this.startPlayerMonitoring();
-            await this.checkEagleAPI();
+        // Set up event listeners
+        await setupEventListeners();
+        
+        pluginState.initialized = true;
+        console.log('✅ Eagle Subtitle Plugin initialized successfully');
+        
+    } catch (error) {
+        console.error('❌ Failed to initialize plugin:', error);
+    }
+}
+
+/**
+ * Set up event listeners
+ */
+async function setupEventListeners() {
+    // Listen for plugin creation
+    eagle.onPluginCreate(async (plugin) => {
+        console.log('🔧 Plugin created, setting up listeners...');
+        await setupPluginListeners();
+    });
+
+    // Listen for plugin run
+    eagle.onPluginRun(async () => {
+        console.log('📁 Plugin run triggered');
+        await handleFileSelection();
+    });
+
+    // Listen for library changes
+    eagle.onLibraryChanged(async (libraryPath) => {
+        console.log('📚 Library changed:', libraryPath);
+        await resetPlugin();
+    });
+}
+
+/**
+ * Set up plugin-specific listeners
+ */
+async function setupPluginListeners() {
+    if (!eagle.player) {
+        console.warn('⚠️ Eagle player not available');
+        return;
+    }
+
+    // Player event listeners
+    if (eagle.player.onPlay) {
+        eagle.player.onPlay(() => {
+            console.log('▶️ Video started playing');
+            if (pluginState.subtitleSync) {
+                pluginState.subtitleSync.startSync();
+            }
         });
-        
-        // 设置字幕同步回调
-        this.sync.onSubtitleChange = (subtitle) => {
-            this.displaySubtitle(subtitle);
-        };
     }
-    
-    // 检查 Eagle API 支持情况
-    async checkEagleAPI() {
-        const supportedMethods = [];
-        const apiMethods = [
-            'getWindow', 'getState', 'getCurrentTime', 'getDuration',
-            'onPlay', 'onPause', 'onTimeUpdate', 'onEnded'
+
+    if (eagle.player.onPause) {
+        eagle.player.onPause(() => {
+            console.log('⏸️ Video paused');
+            if (pluginState.subtitleSync) {
+                pluginState.subtitleSync.stopSync();
+            }
+        });
+    }
+
+    if (eagle.player.onTimeUpdate) {
+        eagle.player.onTimeUpdate((time) => {
+            if (pluginState.subtitleSync) {
+                pluginState.subtitleSync.setCurrentTime(time + pluginState.timeOffset);
+            }
+        });
+    }
+
+    if (eagle.player.onEnded) {
+        eagle.player.onEnded(() => {
+            console.log('🏁 Video ended');
+            if (pluginState.subtitleSync) {
+                pluginState.subtitleSync.stopSync();
+                displaySubtitle(null);
+            }
+        });
+    }
+
+    console.log('✅ Player listeners set up');
+}
+
+/**
+ * Handle file selection
+ */
+async function handleFileSelection() {
+    try {
+        const selectedItems = await eagle.item.getSelected();
+        if (selectedItems.length === 0) {
+            console.log('❌ No items selected');
+            return;
+        }
+
+        const item = selectedItems[0];
+        
+        if (!SubtitleUtils.isVideoFile(item.name)) {
+            console.log('❌ Selected item is not a video file:', item.name);
+            return;
+        }
+
+        console.log('🎥 Video file selected:', item.name);
+        pluginState.currentVideo = item;
+
+        // Load subtitles
+        await loadSubtitlesForVideo(item);
+
+        // Create overlay
+        await createSubtitleOverlay();
+
+    } catch (error) {
+        console.error('❌ Error handling file selection:', error);
+    }
+}
+
+/**
+ * Load subtitles for a video
+ */
+async function loadSubtitlesForVideo(videoItem) {
+    try {
+        console.log('🔍 Loading subtitles for video...');
+
+        // Get video file path
+        const videoPath = await getVideoFilePath(videoItem);
+        if (!videoPath) {
+            console.log('❌ Could not get video file path');
+            showNotification('Could not get video file path');
+            return;
+        }
+
+        console.log('📹 Video path:', videoPath);
+
+        // Find subtitle file
+        const subtitlePath = SubtitleUtils.getSubtitlePath(videoPath);
+        if (!subtitlePath) {
+            console.log('❌ No subtitle file found');
+            showNotification('No subtitle file found');
+            return;
+        }
+
+        console.log('📝 Subtitle path:', subtitlePath);
+
+        // Read subtitle file
+        const content = SubtitleUtils.readFile(subtitlePath);
+        if (!content) {
+            console.log('❌ Could not read subtitle file');
+            showNotification('Could not read subtitle file');
+            return;
+        }
+
+        // Parse subtitles
+        const fileExt = SubtitleUtils.getFileExtension(subtitlePath);
+        const parser = new SubtitleParser();
+        pluginState.currentSubtitles = parser.parse(content, fileExt);
+
+        if (pluginState.currentSubtitles.length === 0) {
+            console.log('❌ No subtitles parsed');
+            showNotification('No subtitles found in file');
+            return;
+        }
+
+        // Load subtitles into sync
+        if (pluginState.subtitleSync) {
+            pluginState.subtitleSync.loadSubtitles(pluginState.currentSubtitles);
+        }
+
+        console.log(`✅ Loaded ${pluginState.currentSubtitles.length} subtitles`);
+        showNotification(`Loaded ${pluginState.currentSubtitles.length} subtitles`);
+
+    } catch (error) {
+        console.error('❌ Error loading subtitles:', error);
+        showNotification('Error loading subtitles');
+    }
+}
+
+/**
+ * Get video file path
+ */
+async function getVideoFilePath(videoItem) {
+    try {
+        const libraryPath = eagle.library.path;
+        console.log('📚 Library path:', libraryPath);
+
+        // Possible video file paths
+        const possiblePaths = [
+            `${libraryPath}/images/${videoItem.id}${videoItem.ext}`,
+            `${libraryPath}/images/${videoItem.id}/${videoItem.name}`,
+            `${libraryPath}/${videoItem.id}${videoItem.ext}`,
+            `${libraryPath}/assets/${videoItem.id}${videoItem.ext}`
         ];
-        
-        for (const method of apiMethods) {
-            if (eagle.player && typeof eagle.player[method] === 'function') {
-                supportedMethods.push(method);
+
+        for (const path of possiblePaths) {
+            if (SubtitleUtils.fileExists(path)) {
+                return path;
             }
         }
-        
-        console.log('🔧 支持的 Eagle 播放器 API:', supportedMethods);
-        
-        if (supportedMethods.length === 0) {
-            console.warn('⚠️ 未检测到 Eagle 播放器 API，使用轮询模式');
-        }
+
+        console.log('❌ Video file not found in any expected location');
+        return null;
+
+    } catch (error) {
+        console.error('❌ Error getting video path:', error);
+        return null;
     }
-    
-    // 设置事件监听器
-    async setupEventListeners() {
-        // 监听文件选择变化
-        eagle.onPluginRun(async () => {
-            console.log('📁 检测到文件选择变化');
-            await this.handleFileSelection();
+}
+
+/**
+ * Create subtitle overlay
+ */
+async function createSubtitleOverlay() {
+    try {
+        // Close existing overlay
+        if (pluginState.overlayWindow) {
+            await pluginState.overlayWindow.close();
+            pluginState.overlayWindow = null;
+        }
+
+        console.log('🪟 Creating subtitle overlay...');
+
+        // Create new overlay window
+        const { BrowserWindow } = require('electron');
+        
+        pluginState.overlayWindow = new BrowserWindow({
+            width: 800,
+            height: 600,
+            transparent: true,
+            frame: false,
+            alwaysOnTop: true,
+            skipTaskbar: true,
+            resizable: false,
+            movable: false,
+            focusable: false,
+            webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false
+            }
         });
-        
-        // 监听资源库切换
-        eagle.onLibraryChanged(async (libraryPath) => {
-            console.log('📚 资源库切换:', libraryPath);
-            await this.resetPlugin();
-        });
-        
-        // 设置播放器事件监听
-        this.setupPlayerEventListeners();
+
+        // Load overlay HTML
+        await pluginState.overlayWindow.loadFile('overlay.html');
+
+        // Position overlay
+        await positionOverlayWindow();
+
+        // Set up overlay events
+        setupOverlayEvents();
+
+        console.log('✅ Subtitle overlay created');
+
+    } catch (error) {
+        console.error('❌ Error creating overlay:', error);
+        showNotification('Error creating subtitle overlay');
     }
-    
-    // 设置播放器事件监听
-    setupPlayerEventListeners() {
-        if (!eagle.player) return;
-        
-        // 播放事件
-        if (eagle.player.onPlay) {
-            eagle.player.onPlay(() => {
-                console.log('▶️ 视频开始播放');
-                this.isPlaying = true;
-                this.sync.startSync();
-            });
-        }
-        
-        // 暂停事件
-        if (eagle.player.onPause) {
-            eagle.player.onPause(() => {
-                console.log('⏸️ 视频暂停');
-                this.isPlaying = false;
-                this.sync.stopSync();
-            });
-        }
-        
-        // 时间更新事件
-        if (eagle.player.onTimeUpdate) {
-            eagle.player.onTimeUpdate((time) => {
-                this.sync.setCurrentTime(time + this.timeOffset);
-            });
-        }
-        
-        // 结束事件
-        if (eagle.player.onEnded) {
-            eagle.player.onEnded(() => {
-                console.log('🏁 视频播放结束');
-                this.isPlaying = false;
-                this.sync.stopSync();
-                this.displaySubtitle(null);
-            });
-        }
-    }
-    
-    // 处理文件选择
-    async handleFileSelection() {
-        try {
-            const selectedItems = await eagle.item.getSelected();
-            if (selectedItems.length === 0) {
-                console.log('❌ 没有选中的文件');
-                return;
-            }
+}
+
+/**
+ * Position overlay window
+ */
+async function positionOverlayWindow() {
+    try {
+        if (!pluginState.overlayWindow) return;
+
+        const eagleWindow = await getEagleMainWindow();
+        if (eagleWindow) {
+            const bounds = eagleWindow.getBounds();
+            pluginState.overlayWindow.setBounds(bounds);
+            console.log('📍 Overlay positioned to Eagle window');
+        } else {
+            // Fallback to full screen
+            const { screen } = require('electron');
+            const primaryDisplay = screen.getPrimaryDisplay();
+            const { width, height } = primaryDisplay.workAreaSize;
             
-            const item = selectedItems[0];
-            
-            if (!this.utils.isVideoFile(item.name)) {
-                console.log('❌ 选中的不是视频文件:', item.name);
-                return;
-            }
-            
-            console.log('🎥 检测到视频文件:', item.name);
-            this.currentVideo = item;
-            
-            // 加载字幕
-            await this.loadSubtitlesForVideo(item);
-            
-            // 创建字幕覆盖层
-            await this.createSubtitleOverlay();
-            
-        } catch (error) {
-            console.error('❌ 处理文件选择失败:', error);
-        }
-    }
-    
-    // 为视频加载字幕
-    async loadSubtitlesForVideo(videoItem) {
-        try {
-            console.log('🔍 正在查找字幕文件...');
-            
-            // 获取视频文件路径
-            const videoPath = await this.getVideoFilePath(videoItem);
-            if (!videoPath) {
-                console.log('❌ 无法获取视频文件路径');
-                return;
-            }
-            
-            console.log('📹 视频文件路径:', videoPath);
-            
-            // 查找字幕文件
-            const subtitlePath = this.utils.getSubtitlePath(videoPath);
-            if (!subtitlePath) {
-                console.log('❌ 未找到字幕文件');
-                this.showNotification('未找到字幕文件');
-                return;
-            }
-            
-            console.log('📝 字幕文件路径:', subtitlePath);
-            
-            // 读取字幕文件
-            const content = this.utils.readFile(subtitlePath);
-            if (!content) {
-                console.log('❌ 无法读取字幕文件');
-                this.showNotification('无法读取字幕文件');
-                return;
-            }
-            
-            // 解析字幕
-            const fileExt = this.utils.getFileExtension(subtitlePath);
-            this.currentSubtitles = this.parser.parse(content, fileExt);
-            
-            if (this.currentSubtitles.length === 0) {
-                console.log('❌ 字幕解析失败');
-                this.showNotification('字幕解析失败');
-                return;
-            }
-            
-            // 加载到同步器
-            this.sync.loadSubtitles(this.currentSubtitles);
-            
-            console.log(`✅ 成功加载 ${this.currentSubtitles.length} 条字幕`);
-            this.showNotification(`已加载 ${this.currentSubtitles.length} 条字幕`);
-            
-        } catch (error) {
-            console.error('❌ 加载字幕失败:', error);
-            this.showNotification('加载字幕失败');
-        }
-    }
-    
-    // 获取视频文件路径
-    async getVideoFilePath(videoItem) {
-        try {
-            const libraryPath = eagle.library.path;
-            console.log('📚 资源库路径:', libraryPath);
-            
-            // Eagle 可能的文件存储路径
-            const possiblePaths = [
-                `${libraryPath}/images/${videoItem.id}${videoItem.ext}`,
-                `${libraryPath}/images/${videoItem.id}/${videoItem.name}`,
-                `${libraryPath}/${videoItem.id}${videoItem.ext}`,
-                `${libraryPath}/assets/${videoItem.id}${videoItem.ext}`
-            ];
-            
-            for (const path of possiblePaths) {
-                if (this.utils.fileExists(path)) {
-                    return path;
-                }
-            }
-            
-            console.log('❌ 在所有可能路径中均未找到视频文件');
-            return null;
-            
-        } catch (error) {
-            console.error('❌ 获取视频路径失败:', error);
-            return null;
-        }
-    }
-    
-    // 创建字幕覆盖层
-    async createSubtitleOverlay() {
-        try {
-            // 如果已存在覆盖层，先关闭
-            if (this.overlayWindow) {
-                await this.overlayWindow.close();
-                this.overlayWindow = null;
-            }
-            
-            console.log('🪟 正在创建字幕覆盖层...');
-            
-            // 创建覆盖窗口
-            const { BrowserWindow } = require('electron');
-            
-            this.overlayWindow = new BrowserWindow({
-                width: 800,
-                height: 600,
-                transparent: true,
-                frame: false,
-                alwaysOnTop: true,
-                skipTaskbar: true,
-                resizable: false,
-                movable: false,
-                focusable: false,
-                webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false
-                }
+            pluginState.overlayWindow.setBounds({
+                x: 0,
+                y: 0,
+                width: width,
+                height: height
             });
             
-            // 加载覆盖层页面
-            await this.overlayWindow.loadFile('overlay.html');
-            
-            // 设置窗口位置（尝试覆盖 Eagle 播放器）
-            await this.positionOverlayWindow();
-            
-            // 监听窗口事件
-            this.setupOverlayWindowEvents();
-            
-            console.log('✅ 字幕覆盖层创建成功');
-            
-        } catch (error) {
-            console.error('❌ 创建字幕覆盖层失败:', error);
-            this.showNotification('创建字幕覆盖层失败');
+            console.log('📍 Overlay positioned to full screen');
         }
+
+    } catch (error) {
+        console.error('❌ Error positioning overlay:', error);
     }
-    
-    // 设置覆盖窗口位置
-    async positionOverlayWindow() {
-        try {
-            if (!this.overlayWindow) return;
-            
-            // 获取 Eagle 主窗口
-            const eagleWindow = await this.getEagleMainWindow();
-            if (eagleWindow) {
-                const bounds = eagleWindow.getBounds();
-                this.overlayWindow.setBounds(bounds);
-                console.log('📍 覆盖层已定位到 Eagle 主窗口');
-            } else {
-                // 如果无法获取 Eagle 窗口，使用屏幕中央
-                const { screen } = require('electron');
-                const primaryDisplay = screen.getPrimaryDisplay();
-                const { width, height } = primaryDisplay.workAreaSize;
-                
-                this.overlayWindow.setBounds({
-                    x: 0,
-                    y: 0,
-                    width: width,
-                    height: height
-                });
-                
-                console.log('📍 覆盖层已定位到全屏');
-            }
-            
-        } catch (error) {
-            console.error('❌ 设置覆盖层位置失败:', error);
+}
+
+/**
+ * Get Eagle main window
+ */
+async function getEagleMainWindow() {
+    try {
+        if (eagle.window && eagle.window.getMainWindow) {
+            return await eagle.window.getMainWindow();
         }
+
+        // Fallback: find window by title
+        const { BrowserWindow } = require('electron');
+        const windows = BrowserWindow.getAllWindows();
+        
+        return windows.find(window => {
+            const title = window.getTitle();
+            return title.includes('Eagle') && !title.includes('subtitle');
+        });
+
+    } catch (error) {
+        console.error('❌ Error getting Eagle main window:', error);
+        return null;
     }
-    
-    // 获取 Eagle 主窗口
-    async getEagleMainWindow() {
-        try {
-            if (eagle.window && eagle.window.getMainWindow) {
-                return await eagle.window.getMainWindow();
-            }
-            
-            // 备用方法：通过标题查找
-            const { BrowserWindow } = require('electron');
-            const windows = BrowserWindow.getAllWindows();
-            
-            return windows.find(window => {
-                const title = window.getTitle();
-                return title.includes('Eagle') && !title.includes('字幕');
-            });
-            
-        } catch (error) {
-            console.error('❌ 获取 Eagle 主窗口失败:', error);
-            return null;
+}
+
+/**
+ * Set up overlay events
+ */
+function setupOverlayEvents() {
+    if (!pluginState.overlayWindow) return;
+
+    // Handle overlay close
+    pluginState.overlayWindow.on('closed', () => {
+        pluginState.overlayWindow = null;
+        console.log('🪟 Overlay window closed');
+    });
+
+    // Handle overlay load
+    pluginState.overlayWindow.webContents.on('did-finish-load', () => {
+        console.log('🌐 Overlay page loaded');
+    });
+
+    // Set up IPC communication
+    setupOverlayCommunication();
+}
+
+/**
+ * Set up overlay communication
+ */
+function setupOverlayCommunication() {
+    if (!pluginState.overlayWindow) return;
+
+    const ipcMain = require('electron').ipcMain;
+
+    // Handle offset adjustment
+    ipcMain.on('adjust-offset-request', async () => {
+        await adjustTimeOffset();
+    });
+
+    // Handle style change
+    ipcMain.on('style-change-request', async () => {
+        await changeSubtitleStyle();
+    });
+
+    // Handle toggle subtitles
+    ipcMain.on('toggle-subtitles-request', () => {
+        pluginState.subtitlesVisible = !pluginState.subtitlesVisible;
+        console.log('👁️ Subtitles visible:', pluginState.subtitlesVisible);
+    });
+
+    // Handle reload subtitles
+    ipcMain.on('reload-subtitles-request', async () => {
+        if (pluginState.currentVideo) {
+            await loadSubtitlesForVideo(pluginState.currentVideo);
         }
+    });
+}
+
+/**
+ * Display subtitle
+ */
+function displaySubtitle(subtitle) {
+    if (!pluginState.overlayWindow || !pluginState.subtitlesVisible) {
+        return;
     }
-    
-    // 设置覆盖窗口事件监听
-    setupOverlayWindowEvents() {
-        if (!this.overlayWindow) return;
-        
-        // 监听覆盖窗口关闭
-        this.overlayWindow.on('closed', () => {
-            this.overlayWindow = null;
-            console.log('🪟 字幕覆盖层已关闭');
-        });
-        
-        // 监听来自覆盖窗口的消息
-        this.overlayWindow.webContents.on('did-finish-load', () => {
-            console.log('🌐 覆盖层页面加载完成');
-        });
-        
-        // 监听控制请求
-        this.setupOverlayCommunication();
+
+    try {
+        const subtitleData = {
+            text: subtitle ? subtitle.text : '',
+            visible: !!subtitle,
+            timestamp: Date.now()
+        };
+
+        pluginState.overlayWindow.webContents.send('subtitle-update', subtitleData);
+
+    } catch (error) {
+        console.error('❌ Error displaying subtitle:', error);
     }
-    
-    // 设置覆盖层通信
-    setupOverlayCommunication() {
-        if (!this.overlayWindow) return;
-        
-        const ipcMain = require('electron').ipcMain;
-        
-        // 监听调整偏移请求
-        ipcMain.on('adjust-offset-request', async () => {
-            await this.adjustTimeOffset();
-        });
-        
-        // 监听样式更改请求
-        ipcMain.on('style-change-request', async () => {
-            await this.changeSubtitleStyle();
-        });
-        
-        // 监听显示/隐藏请求
-        ipcMain.on('toggle-subtitles-request', () => {
-            this.subtitlesVisible = !this.subtitlesVisible;
-            console.log('👁️ 字幕显示状态:', this.subtitlesVisible);
-        });
-        
-        // 监听重新加载请求
-        ipcMain.on('reload-subtitles-request', async () => {
-            if (this.currentVideo) {
-                await this.loadSubtitlesForVideo(this.currentVideo);
-            }
-        });
-    }
-    
-    // 启动播放器监控
-    async startPlayerMonitoring() {
-        console.log('🔍 启动播放器监控...');
-        
-        // 如果有事件监听，优先使用事件
-        if (eagle.player && eagle.player.onTimeUpdate) {
-            console.log('✅ 使用事件监听模式');
-            return;
+}
+
+/**
+ * Adjust time offset
+ */
+async function adjustTimeOffset() {
+    try {
+        const offset = prompt('Enter time offset in seconds (positive to delay, negative to advance):', '0');
+        if (offset !== null) {
+            pluginState.timeOffset = parseFloat(offset) || 0;
+            console.log('⏰ Time offset set to:', pluginState.timeOffset, 'seconds');
+            showNotification(`Time offset: ${pluginState.timeOffset}s`);
         }
-        
-        // 否则使用轮询模式
-        console.log('⏱️ 使用轮询模式');
-        this.startPollingMode();
+    } catch (error) {
+        console.error('❌ Error adjusting time offset:', error);
     }
-    
-    // 启动轮询模式
-    startPollingMode() {
-        // 监控播放状态
-        setInterval(async () => {
-            try {
-                if (eagle.player && eagle.player.getState) {
-                    const state = await eagle.player.getState();
-                    const wasPlaying = this.isPlaying;
-                    this.isPlaying = state.isPlaying;
-                    
-                    if (this.isPlaying && !wasPlaying) {
-                        console.log('▶️ 检测到播放开始');
-                        this.sync.startSync();
-                    } else if (!this.isPlaying && wasPlaying) {
-                        console.log('⏸️ 检测到播放暂停');
-                        this.sync.stopSync();
-                    }
-                }
-            } catch (error) {
-                // 忽略错误，继续轮询
-            }
-        }, 100);
+}
+
+/**
+ * Change subtitle style
+ */
+async function changeSubtitleStyle() {
+    try {
+        const fontSize = prompt('Enter font size (12-32):', '18');
+        const position = prompt('Enter subtitle position (top/middle/bottom):', 'bottom');
         
-        // 监控播放时间
-        setInterval(async () => {
-            try {
-                if (eagle.player && eagle.player.getCurrentTime && this.isPlaying) {
-                    const currentTime = await eagle.player.getCurrentTime();
-                    this.sync.setCurrentTime(currentTime + this.timeOffset);
-                }
-            } catch (error) {
-                // 忽略错误，继续轮询
-            }
-        }, 50);
-    }
-    
-    // 显示字幕
-    displaySubtitle(subtitle) {
-        if (!this.overlayWindow || !this.subtitlesVisible) {
-            return;
-        }
-        
-        try {
-            const subtitleData = {
-                text: subtitle ? subtitle.text : '',
-                visible: !!subtitle,
-                timestamp: Date.now()
+        if (fontSize !== null && position !== null) {
+            const styleData = {
+                fontSize: Math.max(12, Math.min(32, parseInt(fontSize) || 18)),
+                position: ['top', 'middle', 'bottom'].includes(position) ? position : 'bottom'
             };
             
-            this.overlayWindow.webContents.send('subtitle-update', subtitleData);
-            
-        } catch (error) {
-            console.error('❌ 发送字幕更新失败:', error);
+            pluginState.overlayWindow.webContents.send('style-update', styleData);
+            console.log('🎨 Subtitle style updated:', styleData);
+            showNotification('Subtitle style updated');
         }
-    }
-    
-    // 调整时间偏移
-    async adjustTimeOffset() {
-        try {
-            const offset = prompt('请输入时间偏移（秒，正数延迟，负数提前）:', '0');
-            if (offset !== null) {
-                this.timeOffset = parseFloat(offset) || 0;
-                console.log('⏰ 时间偏移已设置为:', this.timeOffset, '秒');
-                this.showNotification(`时间偏移: ${this.timeOffset}秒`);
-            }
-        } catch (error) {
-            console.error('❌ 调整时间偏移失败:', error);
-        }
-    }
-    
-    // 更改字幕样式
-    async changeSubtitleStyle() {
-        try {
-            const fontSize = prompt('请输入字体大小 (12-32):', '18');
-            const position = prompt('请输入字幕位置 (top/middle/bottom):', 'bottom');
-            
-            if (fontSize !== null && position !== null) {
-                const styleData = {
-                    fontSize: Math.max(12, Math.min(32, parseInt(fontSize) || 18)),
-                    position: ['top', 'middle', 'bottom'].includes(position) ? position : 'bottom'
-                };
-                
-                this.overlayWindow.webContents.send('style-update', styleData);
-                console.log('🎨 字幕样式已更新:', styleData);
-                this.showNotification('字幕样式已更新');
-            }
-        } catch (error) {
-            console.error('❌ 更改字幕样式失败:', error);
-        }
-    }
-    
-    // 显示通知
-    showNotification(message) {
-        this.utils.showNotification(message);
-        
-        if (this.overlayWindow) {
-            try {
-                this.overlayWindow.webContents.send('notification', message);
-            } catch (error) {
-                console.error('❌ 发送通知失败:', error);
-            }
-        }
-    }
-    
-    // 重置插件
-    async resetPlugin() {
-        console.log('🔄 重置插件...');
-        
-        // 关闭覆盖层
-        if (this.overlayWindow) {
-            await this.overlayWindow.close();
-            this.overlayWindow = null;
-        }
-        
-        // 重置状态
-        this.currentVideo = null;
-        this.currentSubtitles = [];
-        this.isPlaying = false;
-        this.timeOffset = 0;
-        
-        // 停止同步
-        this.sync.stopSync();
-        
-        console.log('✅ 插件已重置');
+    } catch (error) {
+        console.error('❌ Error changing subtitle style:', error);
     }
 }
 
-// 初始化插件
-let subtitlePlugin;
-try {
-    subtitlePlugin = new EagleSubtitlePlugin();
-} catch (error) {
-    console.error('❌ 插件初始化失败:', error);
+/**
+ * Show notification
+ */
+function showNotification(message) {
+    console.log('📢', message);
+    
+    if (pluginState.overlayWindow) {
+        try {
+            pluginState.overlayWindow.webContents.send('notification', message);
+        } catch (error) {
+            console.error('❌ Error sending notification:', error);
+        }
+    }
 }
 
-// 导出插件类
+/**
+ * Reset plugin
+ */
+async function resetPlugin() {
+    console.log('🔄 Resetting plugin...');
+    
+    // Close overlay
+    if (pluginState.overlayWindow) {
+        await pluginState.overlayWindow.close();
+        pluginState.overlayWindow = null;
+    }
+    
+    // Reset state
+    pluginState.currentVideo = null;
+    pluginState.currentSubtitles = [];
+    pluginState.timeOffset = 0;
+    
+    // Stop sync
+    if (pluginState.subtitleSync) {
+        pluginState.subtitleSync.stopSync();
+    }
+    
+    console.log('✅ Plugin reset');
+}
+
+/**
+ * Start player monitoring
+ */
+async function startPlayerMonitoring() {
+    console.log('🔍 Starting player monitoring...');
+    
+    // Use event-based monitoring if available
+    if (eagle.player && eagle.player.onTimeUpdate) {
+        console.log('✅ Using event-based monitoring');
+        return;
+    }
+    
+    // Fall back to polling
+    console.log('⏱️ Using polling-based monitoring');
+    startPollingMode();
+}
+
+/**
+ * Start polling mode
+ */
+function startPollingMode() {
+    // Monitor play state
+    setInterval(async () => {
+        try {
+            if (eagle.player && eagle.player.getState) {
+                const state = await eagle.player.getState();
+                // Handle state changes here
+            }
+        } catch (error) {
+            // Ignore errors, continue polling
+        }
+    }, 100);
+    
+    // Monitor playback time
+    setInterval(async () => {
+        try {
+            if (eagle.player && eagle.player.getCurrentTime) {
+                const currentTime = await eagle.player.getCurrentTime();
+                if (pluginState.subtitleSync) {
+                    pluginState.subtitleSync.setCurrentTime(currentTime + pluginState.timeOffset);
+                }
+            }
+        } catch (error) {
+            // Ignore errors, continue polling
+        }
+    }, 50);
+}
+
+// Initialize plugin when ready
+eagle.onReady(async () => {
+    console.log('🚀 Eagle is ready, initializing plugin...');
+    await initialize();
+    await startPlayerMonitoring();
+});
+
+// Export plugin functions for testing
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = EagleSubtitlePlugin;
+    module.exports = {
+        initialize,
+        resetPlugin,
+        handleFileSelection,
+        pluginState
+    };
 }
